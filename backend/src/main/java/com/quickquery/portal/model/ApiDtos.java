@@ -24,7 +24,7 @@ public final class ApiDtos {
   public record AdminStats(int totalUsers, int totalClasses, int totalSubjects, int totalQuestions, int totalUnderstandingEntries) {}
   public record EnrolledUser(UUID id, String name, String email, String role, String avatar, String enrollmentRole) {}
 
-  public record Syllabus(UUID id, UUID subjectId, String fileName, String contentType, String status, String errorMessage, Instant createdAt) {}
+  public record Syllabus(UUID id, UUID subjectId, String fileName, String contentType, String status, String errorMessage, Instant createdAt, Integer charCount, Boolean isTruncated) {}
   public record Material(UUID id, UUID subjectId, String title, String fileName, String contentType, Instant createdAt) {}
   public record GeneratedContent(UUID id, UUID subjectId, UUID syllabusId, String status, String contentJson, String errorMessage, Instant createdAt, Instant updatedAt) {}
   public record UpdateGeneratedContentRequest(String status, String contentJson) {}

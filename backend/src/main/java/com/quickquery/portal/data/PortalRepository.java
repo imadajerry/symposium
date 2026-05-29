@@ -208,13 +208,13 @@ public class PortalRepository {
     return jdbc.queryForObject("""
         insert into syllabi (subject_id, uploaded_by, file_name, content_type, storage_path, extracted_text, status, error_message)
         values (?, ?, ?, ?, ?, ?, ?, ?)
-        returning id, subject_id, file_name, content_type, status, error_message, created_at
+        returning id, subject_id, file_name, content_type, status, error_message, created_at, length(coalesce(extracted_text, '')) as char_count
         """, this::mapSyllabus, subjectId, uploadedBy, fileName, contentType, storagePath, extractedText, status, errorMessage);
   }
 
   public List<Syllabus> listSyllabi(UUID subjectId) {
     return jdbc.query("""
-        select id, subject_id, file_name, content_type, status, error_message, created_at
+        select id, subject_id, file_name, content_type, status, error_message, created_at, length(coalesce(extracted_text, '')) as char_count
         from syllabi where subject_id = ? order by created_at desc
         """, this::mapSyllabus, subjectId);
   }
@@ -551,7 +551,19 @@ public class PortalRepository {
   }
 
   private Syllabus mapSyllabus(ResultSet rs, int rowNum) throws SQLException {
-    return new Syllabus(rs.getObject("id", UUID.class), rs.getObject("subject_id", UUID.class), rs.getString("file_name"), rs.getString("content_type"), rs.getString("status"), rs.getString("error_message"), instant(rs, "created_at"));
+    int charCount = rs.getInt("char_count");
+    boolean isTruncated = charCount > 12000;
+    return new Syllabus(
+        rs.getObject("id", UUID.class),
+        rs.getObject("subject_id", UUID.class),
+        rs.getString("file_name"),
+        rs.getString("content_type"),
+        rs.getString("status"),
+        rs.getString("error_message"),
+        instant(rs, "created_at"),
+        charCount,
+        isTruncated
+    );
   }
 
   private Material mapMaterial(ResultSet rs, int rowNum) throws SQLException {
