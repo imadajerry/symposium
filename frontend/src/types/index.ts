@@ -76,6 +76,8 @@ export interface Syllabus {
   status: string;
   errorMessage?: string;
   createdAt: Date | string;
+  charCount?: number;
+  isTruncated?: boolean;
 }
 
 export interface Material {
@@ -96,6 +98,18 @@ export interface GeneratedContent {
   errorMessage?: string;
   createdAt: Date | string;
   updatedAt: Date | string;
+}
+
+/** Improvement 1 & 2: canonical topic extracted from approved generated content. */
+export interface SyllabusTopic {
+  id: string;
+  subjectId: string;
+  generatedContentId?: string;
+  moduleTitle?: string;
+  topicName: string;
+  sortOrder: number;
+  coveredOn?: string | null;  // ISO date string, null = not covered (improvement 2)
+  createdAt: Date | string;
 }
 
 // Question & Reply Types
@@ -155,18 +169,28 @@ export interface UnderstandingEntry {
   studentId: string;
   studentName: string;
   topic: string;
+  topicId?: string | null;   // improvement 1: FK to syllabus_topics
   level: UnderstandingLevel;
   note?: string;
   tags: string[];
   createdAt: Date | string;
 }
 
+/** Improvement 3: weekly trend data point for charts. */
+export interface WeeklyTrend {
+  weekStart: string;
+  averageScore: number;
+  entryCount: number;
+}
+
 export interface UnderstandingAnalytics {
   averageScore: number;
   totalEntries: number;
+  participationRate: number;                                    // improvement 3
   topics: Array<{ topic: string; averageScore: number; totalEntries: number }>;
   tags: Array<{ tag: string; count: number }>;
   recentLowEntries: UnderstandingEntry[];
+  weeklyTrend: WeeklyTrend[];                                   // improvement 3
 }
 
 // Context Types
@@ -193,7 +217,13 @@ export interface DataContextType {
   addPeerReply: (threadId: string, content: string) => Promise<void>;
   understandingEntries: UnderstandingEntry[];
   understandingAnalytics: UnderstandingAnalytics | null;
-  submitUnderstanding: (payload: { topic: string; level: UnderstandingLevel; note?: string; tags: string[] }) => Promise<void>;
+  submitUnderstanding: (payload: { topic: string; topicId?: string | null; level: UnderstandingLevel; note?: string; tags: string[] }) => Promise<void>;
+  /** Improvement 1 & 2: canonical topics from approved generated content. */
+  syllabusTopics: SyllabusTopic[];
+  /** Improvement 2: teacher marks topic as covered. */
+  coverTopic: (subjectId: string, topicId: string, coveredOn?: string) => Promise<SyllabusTopic>;
+  /** Improvement 4: trigger LLM re-generation for a specific syllabus. */
+  regenerateSyllabus: (subjectId: string, syllabusId: string) => Promise<void>;
   activeCourseId: string | null;
   setActiveCourseId: (id: string | null) => void;
 }

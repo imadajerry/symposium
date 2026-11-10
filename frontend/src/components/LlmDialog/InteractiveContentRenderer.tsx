@@ -273,12 +273,6 @@ export const InteractiveContentRenderer: React.FC<InteractiveContentRendererProp
         </div>
       )}
 
-      {/* If there are no sections and no metadata (just standard plain text/markdown) */}
-      {sections.length === 0 && metadata.length === 0 && (
-        <div className="text-sm text-gray-700 leading-relaxed">
-          {renderInnerContent(content, codeBlocks)}
-        </div>
-      )}
     </div>
   );
 };

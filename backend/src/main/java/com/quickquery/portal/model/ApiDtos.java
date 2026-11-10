@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +30,18 @@ public final class ApiDtos {
   public record GeneratedContent(UUID id, UUID subjectId, UUID syllabusId, String status, String contentJson, String errorMessage, Instant createdAt, Instant updatedAt) {}
   public record UpdateGeneratedContentRequest(String status, String contentJson) {}
 
+  /** A canonical topic extracted from approved generated content (improvement 1 & 2). */
+  public record SyllabusTopic(
+      UUID id,
+      UUID subjectId,
+      UUID generatedContentId,
+      String moduleTitle,
+      String topicName,
+      int sortOrder,
+      LocalDate coveredOn,       // null = not yet covered (improvement 2)
+      Instant createdAt
+  ) {}
+
   public record Question(UUID id, UUID subjectId, UUID userId, String authorName, String authorRole, String content, int upvotes, boolean isAnswered, Instant createdAt, List<Reply> replies) {}
   public record Reply(UUID id, UUID questionId, UUID userId, String authorName, String authorRole, String content, Instant createdAt) {}
   public record CreateTextRequest(@NotBlank String content) {}
@@ -37,9 +50,25 @@ public final class ApiDtos {
   public record CreateConversationRequest(UUID subjectId, @NotBlank String title, String scope) {}
   public record Message(UUID id, UUID conversationId, UUID senderId, String senderName, String senderType, String content, Instant createdAt) {}
 
-  public record UnderstandingRequest(@NotBlank String topic, @NotBlank String level, String note, List<String> tags) {}
-  public record UnderstandingEntry(UUID id, UUID subjectId, UUID studentId, String studentName, String topic, String level, String note, List<String> tags, Instant createdAt) {}
-  public record UnderstandingAnalytics(double averageScore, int totalEntries, List<TopicUnderstanding> topics, List<TagCount> tags, List<UnderstandingEntry> recentLowEntries) {}
+  public record UnderstandingRequest(@NotBlank String topic, UUID topicId, @NotBlank String level, String note, List<String> tags) {}
+  public record UnderstandingEntry(UUID id, UUID subjectId, UUID studentId, String studentName, String topic, UUID topicId, String level, String note, List<String> tags, Instant createdAt) {}
+
+  /**
+   * Enhanced analytics (improvement 3): adds trend over time, participation rate, per-topic tag breakdown.
+   */
+  public record UnderstandingAnalytics(
+      double averageScore,
+      int totalEntries,
+      double participationRate,               // distinct students / enrolled students
+      List<TopicUnderstanding> topics,
+      List<TagCount> tags,
+      List<UnderstandingEntry> recentLowEntries,
+      List<WeeklyTrend> weeklyTrend           // improvement 3: trend over time
+  ) {}
+
   public record TopicUnderstanding(String topic, double averageScore, int totalEntries) {}
   public record TagCount(String tag, int count) {}
+
+  /** Improvement 3: weekly average score and entry count for trend charts. */
+  public record WeeklyTrend(String weekStart, double averageScore, int entryCount) {}
 }

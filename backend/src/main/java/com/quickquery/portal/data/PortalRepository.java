@@ -1,14 +1,19 @@
 package com.quickquery.portal.data;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.quickquery.portal.model.ApiDtos.*;
 import com.quickquery.portal.model.ApiUser;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,6 +21,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class PortalRepository {
+  private static final Logger log = LoggerFactory.getLogger(PortalRepository.class);
+  private static final ObjectMapper MAPPER = new ObjectMapper();
   private final JdbcTemplate jdbc;
 
   public PortalRepository(JdbcTemplate jdbc) {
@@ -28,8 +35,8 @@ public class PortalRepository {
     Integer count = jdbc.queryForObject("select count(*) from app_users", Integer.class);
     if (count != null && count > 0) return;
 
-    ApiUser admin = createUser("Admin User", "admin@quickquery.com", encoder.encode("admin123"), "admin", "A");
-    ApiUser teacher = createUser("Prof. Sarah Johnson", "sarah@quickquery.com", encoder.encode("teacher123"), "teacher", "T");
+    ApiUser admin = createUser("Admin User", "admin@symposium.edu", encoder.encode("admin123"), "admin", "A");
+    ApiUser teacher = createUser("Prof. Sarah Johnson", "sarah@symposium.edu", encoder.encode("teacher123"), "teacher", "T");
     ApiUser student = createUser("Alex Thompson", "alex@student.com", encoder.encode("student123"), "student", "S");
     createUser("Emma Wilson", "emma@student.com", encoder.encode("student123"), "student", "S");
 
@@ -259,12 +266,75 @@ public class PortalRepository {
         """, this::mapMaterial, subjectId);
   }
 
-  public GeneratedContent saveGeneratedContent(UUID subjectId, UUID syllabusId, String status, String contentJson, String errorMessage) {
+  /** Improvement 6: accepts rawLlmResponse and persists it alongside content_json. */
+  public GeneratedContent saveGeneratedContent(UUID subjectId, UUID syllabusId, String status, String contentJson, String rawLlmResponse, String errorMessage) {
     return jdbc.queryForObject("""
-        insert into generated_content (subject_id, syllabus_id, status, content_json, error_message)
-        values (?, ?, ?, cast(? as jsonb), ?)
+        insert into generated_content (subject_id, syllabus_id, status, content_json, raw_llm_response, error_message)
+        values (?, ?, ?, cast(? as jsonb), ?, ?)
         returning id, subject_id, syllabus_id, status, content_json::text as content_json, error_message, created_at, updated_at
-        """, this::mapGeneratedContent, subjectId, syllabusId, status, contentJson, errorMessage);
+        """, this::mapGeneratedContent, subjectId, syllabusId, status, contentJson, rawLlmResponse, errorMessage);
+  }
+
+  // -----------------------------------------------------------------------
+  // Improvement 1 & 2: syllabus_topics
+  // -----------------------------------------------------------------------
+
+  /**
+   * Parses approved content_json and upserts rows into syllabus_topics.
+   * Called automatically when a teacher approves generated content.
+   */
+  public int populateSyllabusTopics(UUID generatedContentId, UUID subjectId) {
+    String contentJson = jdbc.queryForObject(
+        "select content_json::text from generated_content where id = ?",
+        String.class, generatedContentId);
+    if (contentJson == null || contentJson.isBlank()) return 0;
+
+    // Clear existing topics from this generated_content row before re-populating
+    jdbc.update("delete from syllabus_topics where generated_content_id = ?", generatedContentId);
+
+    int count = 0;
+    try {
+      JsonNode root = MAPPER.readTree(contentJson);
+      JsonNode modules = root.path("modules");
+      if (modules.isArray()) {
+        int sortBase = 0;
+        for (JsonNode module : modules) {
+          String moduleTitle = module.path("title").asText(null);
+          JsonNode topics = module.path("topics");
+          if (topics.isArray()) {
+            for (JsonNode topic : topics) {
+              String topicName = topic.isTextual() ? topic.asText() : topic.toString();
+              if (topicName == null || topicName.isBlank()) continue;
+              jdbc.update("""
+                  insert into syllabus_topics (subject_id, generated_content_id, module_title, topic_name, sort_order)
+                  values (?, ?, ?, ?, ?)
+                  """, subjectId, generatedContentId, moduleTitle, topicName, sortBase++);
+              count++;
+            }
+          }
+        }
+      }
+    } catch (Exception e) {
+      log.warn("Failed to parse content_json for syllabus_topics population (contentId={}): {}", generatedContentId, e.getMessage());
+    }
+    return count;
+  }
+
+  public List<SyllabusTopic> listSyllabusTopics(UUID subjectId) {
+    return jdbc.query("""
+        select id, subject_id, generated_content_id, module_title, topic_name, sort_order, covered_on, created_at
+        from syllabus_topics where subject_id = ?
+        order by sort_order asc, created_at asc
+        """, this::mapSyllabusTopic, subjectId);
+  }
+
+  /** Improvement 2: teacher marks a topic as covered today (idempotent). */
+  public SyllabusTopic coverTopic(UUID topicId, LocalDate coveredOn) {
+    return jdbc.queryForObject("""
+        update syllabus_topics set covered_on = ?
+        where id = ?
+        returning id, subject_id, generated_content_id, module_title, topic_name, sort_order, covered_on, created_at
+        """, this::mapSyllabusTopic, coveredOn, topicId);
   }
 
   public List<GeneratedContent> listGeneratedContent(UUID subjectId) {
@@ -412,12 +482,13 @@ public class PortalRepository {
     return listMessages(conversationId).stream().filter(message -> message.id().equals(id)).findFirst().orElseThrow();
   }
 
-  public UnderstandingEntry createUnderstanding(UUID subjectId, UUID studentId, String topic, String level, String note, List<String> tags) {
+  /** Improvement 1: accepts optional topicId to link entry to a canonical syllabus topic. */
+  public UnderstandingEntry createUnderstanding(UUID subjectId, UUID studentId, String topic, UUID topicId, String level, String note, List<String> tags) {
     UUID id = jdbc.queryForObject("""
-        insert into understanding_entries (subject_id, student_id, topic, level, note)
-        values (?, ?, ?, ?, ?)
+        insert into understanding_entries (subject_id, student_id, topic, topic_id, level, note)
+        values (?, ?, ?, ?, ?, ?)
         returning id
-        """, UUID.class, subjectId, studentId, topic, level, note);
+        """, UUID.class, subjectId, studentId, topic, topicId, level, note);
     if (tags != null) {
       for (String tag : tags.stream().map(String::trim).filter(t -> !t.isBlank()).distinct().toList()) {
         UUID tagId = jdbc.queryForObject("""
@@ -442,14 +513,16 @@ public class PortalRepository {
     return entries;
   }
 
+  /** Improvement 3: enhanced analytics with trend over time and participation rate. */
   public UnderstandingAnalytics analytics(UUID subjectId) {
     List<TopicUnderstanding> topics = jdbc.query("""
-        select topic, avg(case level
-          when 'lost' then 1 when 'basic' then 2 when 'okay' then 3 when 'confident' then 4 when 'mastered' then 5 end) as avg_score,
-          count(*) as total_entries
+        select topic,
+               avg(case level when 'lost' then 1 when 'basic' then 2 when 'okay' then 3 when 'confident' then 4 when 'mastered' then 5 end) as avg_score,
+               count(*) as total_entries
         from understanding_entries where subject_id = ?
         group by topic order by avg_score asc, total_entries desc
         """, (rs, rowNum) -> new TopicUnderstanding(rs.getString("topic"), rs.getDouble("avg_score"), rs.getInt("total_entries")), subjectId);
+
     List<TagCount> tags = jdbc.query("""
         select t.name, count(*) as total from tags t
         join understanding_entry_tags uet on uet.tag_id = t.id
@@ -457,6 +530,7 @@ public class PortalRepository {
         where ue.subject_id = ?
         group by t.name order by total desc limit 20
         """, (rs, rowNum) -> new TagCount(rs.getString("name"), rs.getInt("total")), subjectId);
+
     List<UnderstandingEntry> recentLow = jdbc.query("""
         select ue.*, u.name as student_name from understanding_entries ue
         join app_users u on u.id = ue.student_id
@@ -464,9 +538,31 @@ public class PortalRepository {
         order by ue.created_at desc limit 10
         """, this::mapUnderstanding, subjectId);
     recentLow.forEach(e -> e.tags().addAll(tagsForUnderstanding(e.id())));
+
+    // Improvement 3: weekly trend — last 8 weeks
+    List<WeeklyTrend> weeklyTrend = jdbc.query("""
+        select to_char(date_trunc('week', created_at), 'YYYY-MM-DD') as week_start,
+               avg(case level when 'lost' then 1 when 'basic' then 2 when 'okay' then 3 when 'confident' then 4 when 'mastered' then 5 end) as avg_score,
+               count(*) as entry_count
+        from understanding_entries
+        where subject_id = ? and created_at >= now() - interval '8 weeks'
+        group by week_start order by week_start asc
+        """, (rs, rowNum) -> new WeeklyTrend(rs.getString("week_start"), rs.getDouble("avg_score"), rs.getInt("entry_count")), subjectId);
+
+    // Improvement 3: participation rate = distinct students who submitted / enrolled students
+    Integer distinctStudents = jdbc.queryForObject(
+        "select count(distinct student_id) from understanding_entries where subject_id = ?",
+        Integer.class, subjectId);
+    Integer enrolledStudents = jdbc.queryForObject(
+        "select count(*) from enrollments where subject_id = ? and role = 'student'",
+        Integer.class, subjectId);
+    double participationRate = (enrolledStudents == null || enrolledStudents == 0)
+        ? 0.0
+        : (double) (distinctStudents == null ? 0 : distinctStudents) / enrolledStudents;
+
     int total = topics.stream().mapToInt(TopicUnderstanding::totalEntries).sum();
     double avg = topics.stream().mapToDouble(t -> t.averageScore() * t.totalEntries()).sum() / Math.max(1, total);
-    return new UnderstandingAnalytics(avg, total, topics, tags, recentLow);
+    return new UnderstandingAnalytics(avg, total, participationRate, topics, tags, recentLow, weeklyTrend);
   }
 
   private Optional<UnderstandingEntry> getUnderstanding(UUID id) {
@@ -571,7 +667,30 @@ public class PortalRepository {
   }
 
   private GeneratedContent mapGeneratedContent(ResultSet rs, int rowNum) throws SQLException {
-    return new GeneratedContent(rs.getObject("id", UUID.class), rs.getObject("subject_id", UUID.class), rs.getObject("syllabus_id", UUID.class), rs.getString("status"), rs.getString("content_json"), rs.getString("error_message"), instant(rs, "created_at"), instant(rs, "updated_at"));
+    return new GeneratedContent(
+        rs.getObject("id", UUID.class),
+        rs.getObject("subject_id", UUID.class),
+        rs.getObject("syllabus_id", UUID.class),
+        rs.getString("status"),
+        rs.getString("content_json"),
+        rs.getString("error_message"),
+        instant(rs, "created_at"),
+        instant(rs, "updated_at")
+    );
+  }
+
+  private SyllabusTopic mapSyllabusTopic(ResultSet rs, int rowNum) throws SQLException {
+    java.sql.Date coveredOnSql = rs.getDate("covered_on");
+    return new SyllabusTopic(
+        rs.getObject("id", UUID.class),
+        rs.getObject("subject_id", UUID.class),
+        rs.getObject("generated_content_id", UUID.class),
+        rs.getString("module_title"),
+        rs.getString("topic_name"),
+        rs.getInt("sort_order"),
+        coveredOnSql == null ? null : coveredOnSql.toLocalDate(),
+        instant(rs, "created_at")
+    );
   }
 
   private Conversation mapConversation(ResultSet rs, int rowNum) throws SQLException {
@@ -579,7 +698,18 @@ public class PortalRepository {
   }
 
   private UnderstandingEntry mapUnderstanding(ResultSet rs, int rowNum) throws SQLException {
-    return new UnderstandingEntry(rs.getObject("id", UUID.class), rs.getObject("subject_id", UUID.class), rs.getObject("student_id", UUID.class), rs.getString("student_name"), rs.getString("topic"), rs.getString("level"), rs.getString("note"), new ArrayList<>(), instant(rs, "created_at"));
+    return new UnderstandingEntry(
+        rs.getObject("id", UUID.class),
+        rs.getObject("subject_id", UUID.class),
+        rs.getObject("student_id", UUID.class),
+        rs.getString("student_name"),
+        rs.getString("topic"),
+        rs.getObject("topic_id", UUID.class),
+        rs.getString("level"),
+        rs.getString("note"),
+        new ArrayList<>(),
+        instant(rs, "created_at")
+    );
   }
 
   private static java.time.Instant instant(ResultSet rs, String column) throws SQLException {

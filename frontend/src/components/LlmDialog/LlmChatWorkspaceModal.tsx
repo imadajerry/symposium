@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bot,
   Send,
@@ -7,10 +8,14 @@ import {
   Plus,
   MessageSquare,
   Sparkles,
-  HelpCircle,
   Clock,
   User,
-  GraduationCap
+  ClipboardList,
+  Target,
+  BarChart2,
+  BookOpen,
+  Lightbulb,
+  PenLine
 } from 'lucide-react';
 import type { Message, Conversation } from '../../types';
 import { InteractiveContentRenderer } from './InteractiveContentRenderer';
@@ -25,6 +30,10 @@ interface LlmChatWorkspaceModalProps {
   sendConversationMessage: (conversationId: string, content: string) => Promise<void>;
   isWaiting: boolean;
   setIsWaiting: (waiting: boolean) => void;
+  optimisticMessage: Message | null;
+  setOptimisticMessage: (msg: Message | null) => void;
+  error: string | null;
+  setError: (error: string | null) => void;
 }
 
 export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
@@ -36,10 +45,13 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
   startLlmConversation,
   sendConversationMessage,
   isWaiting,
-  setIsWaiting
+  setIsWaiting,
+  optimisticMessage,
+  setOptimisticMessage,
+  error,
+  setError
 }) => {
   const [draft, setDraft] = useState('');
-  const [optimisticMessage, setOptimisticMessage] = useState<Message | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -54,13 +66,13 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
   );
 
   // Suggested prompt ideas depending on syllabus contexts
-  const suggestedPrompts = [
-    { text: '📋 Briefly summarize the subject syllabus', label: 'Summary' },
-    { text: '🎯 Detail the main learning objectives', label: 'Objectives' },
-    { text: '📊 Explain the internal & external exam scheme', label: 'Exam Pattern' },
-    { text: '📚 List recommended books & reference resources', label: 'Reference Books' },
-    { text: '💡 Generate a 5-week study plan for this subject', label: 'Study Plan' },
-    { text: '📝 Create 3 sample practice questions with answers', label: 'Practice Quiz' }
+  const suggestedPrompts: { text: string; label: string; icon: React.ElementType }[] = [
+    { text: 'Briefly summarize the subject syllabus', label: 'Summary', icon: ClipboardList },
+    { text: 'Detail the main learning objectives', label: 'Objectives', icon: Target },
+    { text: 'Explain the internal & external exam scheme', label: 'Exam Pattern', icon: BarChart2 },
+    { text: 'List recommended books & reference resources', label: 'Reference Books', icon: BookOpen },
+    { text: 'Generate a 5-week study plan for this subject', label: 'Study Plan', icon: Lightbulb },
+    { text: 'Create 3 sample practice questions with answers', label: 'Practice Quiz', icon: PenLine }
   ];
 
   // Combine real messages and optimistic user messages
@@ -102,6 +114,7 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isWaiting) return;
 
+    setError(null);
     setDraft('');
     const content = textToSend.trim();
 
@@ -128,6 +141,8 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
       await sendConversationMessage(targetConv.id, content);
     } catch (e) {
       console.error('Failed to send LLM message', e);
+      setOptimisticMessage(null);
+      setError(e instanceof Error ? e.message : 'An error occurred');
     } finally {
       setIsWaiting(false);
     }
@@ -151,8 +166,8 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
     setDraft('');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
       <div className="w-full max-w-6xl h-[85vh] bg-white rounded-2xl shadow-2xl flex border border-gray-200 overflow-hidden glass-panel">
         
         {/* Sidebar: LLM Conversations list */}
@@ -256,21 +271,24 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
 
                 {/* Prompt Cards Grid */}
                 <div className="grid grid-cols-2 gap-3 w-full mt-4">
-                  {suggestedPrompts.slice(0, 4).map((p, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSend(p.text)}
-                      className="p-4 text-left bg-white border border-gray-200/80 rounded-xl hover:border-blue-400 hover:shadow-md hover:translate-y-[-1px] transition-all group"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 font-semibold mb-2 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        <GraduationCap className="w-4 h-4" />
-                      </div>
-                      <span className="text-xs font-bold text-gray-700 block">{p.label}</span>
-                      <span className="text-[11px] text-gray-400 mt-1 block line-clamp-2">
-                        {p.text}
-                      </span>
-                    </button>
-                  ))}
+                  {suggestedPrompts.slice(0, 4).map((p, idx) => {
+                    const Icon = p.icon;
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(p.text)}
+                        className="p-4 text-left bg-white border border-gray-200/80 rounded-xl hover:border-blue-400 hover:shadow-md hover:translate-y-[-1px] transition-all group"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 mb-2 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-gray-700 block">{p.label}</span>
+                        <span className="text-[11px] text-gray-400 mt-1 block line-clamp-2">
+                          {p.text}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ) : (
@@ -359,18 +377,33 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
           <div className="p-4 border-t border-gray-200/80 bg-white flex flex-col gap-3">
             {/* Horizontal Scrollable Suggestions Row */}
             <div className="flex gap-2 overflow-x-auto pb-1 max-w-4xl mx-auto w-full no-scrollbar">
-              {suggestedPrompts.map((p, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSend(p.text)}
-                  disabled={isWaiting}
-                  className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-full border border-gray-200 hover:border-blue-300 text-xs font-medium transition-all shrink-0 flex items-center gap-1 hover:translate-y-[-1px]"
-                >
-                  <HelpCircle className="w-3.5 h-3.5 shrink-0 text-blue-400" />
-                  {p.label}
-                </button>
-              ))}
+              {suggestedPrompts.map((p, idx) => {
+                const Icon = p.icon;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSend(p.text)}
+                    disabled={isWaiting}
+                    className="px-3 py-1.5 bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded-full border border-gray-200 hover:border-blue-300 text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 hover:translate-y-[-1px]"
+                  >
+                    <Icon className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
+
+            {error && (
+              <div className="max-w-4xl mx-auto w-full mb-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-sm text-red-600">
+                <span className="flex items-center gap-2">
+                  <X className="w-4 h-4" />
+                  {error}
+                </span>
+                <button onClick={() => setError(null)} className="hover:text-red-800">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Input Row */}
             <form onSubmit={onSubmit} className="flex gap-2.5 max-w-4xl mx-auto w-full">
@@ -406,4 +439,6 @@ export const LlmChatWorkspaceModal: React.FC<LlmChatWorkspaceModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

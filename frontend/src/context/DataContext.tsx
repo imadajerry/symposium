@@ -9,6 +9,7 @@ import type {
   Material,
   Question,
   Syllabus,
+  SyllabusTopic,
   UnderstandingAnalytics,
   UnderstandingEntry,
   UnderstandingLevel,
@@ -34,6 +35,7 @@ export const DataProvider = ({ children }: DataProviderProps) => {
   const [peerThreads, setPeerThreads] = useState<Conversation[]>([]);
   const [understandingEntries, setUnderstandingEntries] = useState<UnderstandingEntry[]>([]);
   const [understandingAnalytics, setUnderstandingAnalytics] = useState<UnderstandingAnalytics | null>(null);
+  const [syllabusTopics, setSyllabusTopics] = useState<SyllabusTopic[]>([]);
   const [activeCourseId, setActiveCourseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export const DataProvider = ({ children }: DataProviderProps) => {
   };
 
   const loadActiveCourseData = async (subjectId: string) => {
-    const [nextQuestions, nextSyllabi, nextMaterials, nextGeneratedContent, nextConversations, nextUnderstanding] =
+    const [nextQuestions, nextSyllabi, nextMaterials, nextGeneratedContent, nextConversations, nextUnderstanding, nextTopics] =
       await Promise.all([
         api.questions(subjectId),
         api.syllabi(subjectId),
@@ -53,6 +55,7 @@ export const DataProvider = ({ children }: DataProviderProps) => {
         api.generatedContent(subjectId),
         api.conversations(subjectId),
         api.myUnderstanding(subjectId),
+        api.syllabusTopics(subjectId),
       ]);
 
     setQuestions(nextQuestions);
@@ -61,6 +64,7 @@ export const DataProvider = ({ children }: DataProviderProps) => {
     setGeneratedContent(nextGeneratedContent);
     setConversations(nextConversations);
     setUnderstandingEntries(nextUnderstanding);
+    setSyllabusTopics(nextTopics);
 
     if (user?.role === 'teacher' || user?.role === 'admin') {
       setUnderstandingAnalytics(await api.understandingAnalytics(subjectId));
@@ -157,7 +161,25 @@ export const DataProvider = ({ children }: DataProviderProps) => {
 
   const approveGeneratedContent = async (contentId: string) => {
     await api.updateGeneratedContent(contentId, 'approved');
-    if (activeCourseId) setGeneratedContent(await api.generatedContent(activeCourseId));
+    if (activeCourseId) {
+      setGeneratedContent(await api.generatedContent(activeCourseId));
+      // Improvement 1: refresh topics after approval so students immediately see them
+      setSyllabusTopics(await api.syllabusTopics(activeCourseId));
+    }
+  };
+
+  /** Improvement 2: teacher marks a topic as covered. */
+  const coverTopic = async (subjectId: string, topicId: string, coveredOn?: string) => {
+    const updated = await api.coverTopic(subjectId, topicId, coveredOn);
+    setSyllabusTopics((prev) => prev.map((t) => (t.id === topicId ? updated : t)));
+    return updated;
+  };
+
+  /** Improvement 4: trigger LLM re-generation for a syllabus. */
+  const regenerateSyllabus = async (subjectId: string, syllabusId: string) => {
+    await api.regenerateSyllabus(subjectId, syllabusId);
+    // Restart polling so the UI reflects the new processing state
+    startProcessingPoll(subjectId);
   };
 
   const startLlmConversation = async (title: string): Promise<Conversation> => {
@@ -184,6 +206,7 @@ export const DataProvider = ({ children }: DataProviderProps) => {
 
   const submitUnderstanding = async (payload: {
     topic: string;
+    topicId?: string | null;
     level: UnderstandingLevel;
     note?: string;
     tags: string[];
@@ -221,6 +244,9 @@ export const DataProvider = ({ children }: DataProviderProps) => {
     understandingEntries,
     understandingAnalytics,
     submitUnderstanding,
+    syllabusTopics,
+    coverTopic,
+    regenerateSyllabus,
     activeCourseId,
     setActiveCourseId,
   };

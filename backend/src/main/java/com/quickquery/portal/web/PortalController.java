@@ -8,16 +8,18 @@ import com.quickquery.portal.service.FileStorageService;
 import com.quickquery.portal.service.FileStorageService.StoredFile;
 import com.quickquery.portal.service.OllamaService;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -179,15 +181,55 @@ public class PortalController {
   @PutMapping("/generated-content/{contentId}")
   public GeneratedContent updateGeneratedContent(@AuthenticationPrincipal ApiUser user, @PathVariable UUID contentId, @RequestBody UpdateGeneratedContentRequest request) {
     requireTeacher(user);
-    return repository.updateGeneratedContent(contentId, request.status(), request.contentJson());
+    GeneratedContent updated = repository.updateGeneratedContent(contentId, request.status(), request.contentJson());
+    // Improvement 1: when approved, populate canonical syllabus_topics from content_json
+    if ("approved".equals(updated.status())) {
+      int count = repository.populateSyllabusTopics(contentId, updated.subjectId());
+      log.debug("Populated {} syllabus topics for content={}", count, contentId);
+    }
+    return updated;
+  }
+
+  /** Improvement 4: nested regenerate route scoped to subject (flat route still works). */
+  @PostMapping("/subjects/{subjectId}/syllabi/{syllabusId}/regenerate")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  public void regenerateNested(@AuthenticationPrincipal ApiUser user,
+      @PathVariable UUID subjectId, @PathVariable UUID syllabusId) {
+    requireTeacher(user);
+    ensureSubject(subjectId);
+    repository.findSyllabusSubjectId(syllabusId)
+        .filter(sid -> sid.equals(subjectId))
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Syllabus not found in this subject"));
+    contentGeneration.generateContentAsync(syllabusId, subjectId, repository.findSyllabusText(syllabusId).orElse(""));
   }
 
   @PostMapping("/syllabi/{syllabusId}/regenerate")
   @ResponseStatus(HttpStatus.ACCEPTED)
   public void regenerate(@AuthenticationPrincipal ApiUser user, @PathVariable UUID syllabusId) {
     requireTeacher(user);
-    UUID subjectId = repository.findSyllabusSubjectId(syllabusId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Syllabus not found"));
+    UUID subjectId = repository.findSyllabusSubjectId(syllabusId)
+        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Syllabus not found"));
     contentGeneration.generateContentAsync(syllabusId, subjectId, repository.findSyllabusText(syllabusId).orElse(""));
+  }
+
+  // Improvement 1 & 2: syllabus topics
+  @GetMapping("/subjects/{subjectId}/syllabus-topics")
+  public List<SyllabusTopic> syllabusTopics(@AuthenticationPrincipal ApiUser user, @PathVariable UUID subjectId) {
+    requireSubjectAccess(user, subjectId);
+    return repository.listSyllabusTopics(subjectId);
+  }
+
+  /** Improvement 2: teacher marks a topic as covered. Body: {"coveredOn":"2024-01-15"} (or null to uncover). */
+  @PatchMapping("/subjects/{subjectId}/syllabus-topics/{topicId}/cover")
+  public SyllabusTopic coverTopic(@AuthenticationPrincipal ApiUser user,
+      @PathVariable UUID subjectId, @PathVariable UUID topicId,
+      @RequestBody(required = false) Map<String, String> body) {
+    requireTeacher(user);
+    ensureSubject(subjectId);
+    LocalDate date = (body != null && body.containsKey("coveredOn") && body.get("coveredOn") != null)
+        ? LocalDate.parse(body.get("coveredOn"))
+        : LocalDate.now();
+    return repository.coverTopic(topicId, date);
   }
 
   @GetMapping("/subjects/{subjectId}/questions")
@@ -233,7 +275,11 @@ public class PortalController {
     }
     Message userMessage = repository.addMessage(conversationId, user.id(), "user", request.content());
     if ("llm".equals(conversation.scope())) {
-      String answer = ollama.answerStudentQuestion(request.content(), repository.approvedContentContext(conversation.subjectId()));
+      String subjectTitle = repository.findSubject(conversation.subjectId())
+          .map(s -> s.title()).orElse(null);
+      String answer = ollama.answerStudentQuestion(
+          request.content(), subjectTitle,
+          repository.approvedContentContext(conversation.subjectId()));
       repository.addMessage(conversationId, null, "llm", answer);
     }
     return userMessage;
@@ -271,7 +317,8 @@ public class PortalController {
     if (!List.of("lost", "basic", "okay", "confident", "mastered").contains(request.level())) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid understanding level");
     }
-    return repository.createUnderstanding(subjectId, user.id(), request.topic(), request.level(), request.note(), request.tags());
+    // Improvement 1: pass topicId (nullable) so entry links to a canonical syllabus topic
+    return repository.createUnderstanding(subjectId, user.id(), request.topic(), request.topicId(), request.level(), request.note(), request.tags());
   }
 
   @GetMapping("/subjects/{subjectId}/understanding/me")
@@ -287,6 +334,8 @@ public class PortalController {
   }
 
   // Content generation is now handled asynchronously by ContentGenerationService
+
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(PortalController.class);
 
   private void ensureSubject(UUID subjectId) {
     repository.findSubject(subjectId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Subject not found"));

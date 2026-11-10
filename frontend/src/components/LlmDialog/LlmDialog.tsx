@@ -1,17 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Loader, Send, Maximize2 } from 'lucide-react';
+import { Bot, Loader, Send, Maximize2, ClipboardList, BarChart2, X } from 'lucide-react';
 import { useData } from '../../context';
 import type { Message } from '../../types';
 import { InteractiveContentRenderer } from './InteractiveContentRenderer';
 import { LlmChatWorkspaceModal } from './LlmChatWorkspaceModal';
 
-const LlmDialog: React.FC = () => {
+interface LlmDialogProps {
+  pageContext?: string;
+  onClose?: () => void;
+}
+
+const LlmDialog: React.FC<LlmDialogProps> = ({ pageContext, onClose }) => {
   const { conversations, startLlmConversation, sendConversationMessage } = useData();
   const [draft, setDraft] = useState('');
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isWaiting, setIsWaiting] = useState(false);
   const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState<Message | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const llmConversations = useMemo(
@@ -20,16 +26,10 @@ const LlmDialog: React.FC = () => {
   );
 
   const activeConversation = useMemo(
-    () => llmConversations.find((conversation) => conversation.id === activeConversationId) ?? llmConversations[0],
+    () => llmConversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [activeConversationId, llmConversations]
   );
 
-  // Sync activeConversationId with the first conversation if none is selected
-  useEffect(() => {
-    if (!activeConversationId && llmConversations.length > 0) {
-      setActiveConversationId(llmConversations[0].id);
-    }
-  }, [llmConversations, activeConversationId]);
 
   // Build the display messages: real messages + optimistic user message if pending
   const displayMessages = useMemo(() => {
@@ -57,6 +57,7 @@ const LlmDialog: React.FC = () => {
   const handleSend = async (contentToSend: string) => {
     if (!contentToSend.trim() || isWaiting) return;
 
+    setError(null);
     const content = contentToSend.trim();
     setDraft('');
 
@@ -73,11 +74,17 @@ const LlmDialog: React.FC = () => {
 
     setIsWaiting(true);
     try {
+      const finalContent = pageContext
+        ? `[System: User is currently viewing the ${pageContext} tab. Provide relevant context if applicable.]\n${content}`
+        : content;
+
       const conversation = activeConversation ?? await startLlmConversation(content.slice(0, 30));
       setActiveConversationId(conversation.id);
-      await sendConversationMessage(conversation.id, content);
+      await sendConversationMessage(conversation.id, finalContent);
     } catch (e) {
       console.error(e);
+      setOptimisticMessage(null);
+      setError(e instanceof Error ? e.message : 'An error occurred');
     } finally {
       setIsWaiting(false);
     }
@@ -88,9 +95,9 @@ const LlmDialog: React.FC = () => {
     handleSend(draft);
   };
 
-  const sidebarSuggestedPrompts = [
-    '📋 Explain syllabus',
-    '📊 Exam pattern'
+  const sidebarSuggestedPrompts: { text: string; label: string; icon: React.ElementType }[] = [
+    { text: 'Explain syllabus', label: 'Explain syllabus', icon: ClipboardList },
+    { text: 'Explain the exam pattern', label: 'Exam pattern', icon: BarChart2 }
   ];
 
   return (
@@ -101,13 +108,24 @@ const LlmDialog: React.FC = () => {
           <Bot className="w-4 h-4 text-blue-500" />
           AI Learning Assistant
         </h3>
-        <button
-          onClick={() => setIsWorkspaceOpen(true)}
-          className="p-1 hover:bg-blue-50 text-blue-500 hover:text-blue-600 rounded transition-colors"
-          title="Open Workspace Modal"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setIsWorkspaceOpen(true)}
+            className="p-1.5 hover:bg-blue-50 text-blue-500 hover:text-blue-600 rounded-lg transition-colors"
+            title="Open Workspace Modal"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg transition-colors"
+              title="Close Assistant"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Message List */}
@@ -131,7 +149,9 @@ const LlmDialog: React.FC = () => {
                   {isLlm ? (
                     <InteractiveContentRenderer content={message.content} />
                   ) : (
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                      {message.content.replace(/^\[System: .*?\]\n/, '')}
+                    </p>
                   )}
                 </div>
               );
@@ -149,19 +169,32 @@ const LlmDialog: React.FC = () => {
             <p className="text-xs text-gray-400">Ask a subject-related question to get started.</p>
             {/* Quick suggested chips */}
             <div className="flex justify-center gap-1.5">
-              {sidebarSuggestedPrompts.map((promptText, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSend(promptText.slice(2))}
-                  className="px-2.5 py-1 rounded-full border border-gray-200 hover:border-blue-400 hover:bg-blue-50 text-[11px] font-medium text-gray-500 hover:text-blue-600 transition-all"
-                >
-                  {promptText}
-                </button>
-              ))}
+              {sidebarSuggestedPrompts.map((p, idx) => {
+                const Icon = p.icon;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSend(p.text)}
+                    className="px-2.5 py-1 rounded-full border border-gray-200 hover:border-blue-400 hover:bg-blue-50 text-[11px] font-medium text-gray-500 hover:text-blue-600 transition-all flex items-center gap-1"
+                  >
+                    <Icon className="w-3 h-3 text-blue-400" />
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
+
+      {error && (
+        <div className="mb-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg flex items-center justify-between text-xs text-red-600">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="hover:text-red-800">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Input bar */}
       <form onSubmit={handleFormSubmit} className="flex gap-2">
@@ -193,6 +226,10 @@ const LlmDialog: React.FC = () => {
         sendConversationMessage={sendConversationMessage}
         isWaiting={isWaiting}
         setIsWaiting={setIsWaiting}
+        optimisticMessage={optimisticMessage}
+        setOptimisticMessage={setOptimisticMessage}
+        error={error}
+        setError={setError}
       />
     </div>
   );

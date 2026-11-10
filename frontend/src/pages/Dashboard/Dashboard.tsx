@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogOut, Plus, Shield } from 'lucide-react';
+import { Plus, Bot, X } from 'lucide-react';
 import {
   CourseViewer,
   QuestionFeed,
@@ -16,40 +16,15 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onAdminClick }) => {
-  const { user, logout, canManageCourses } = useAuth();
+  const { canManageCourses } = useAuth();
   const { isLoading, error } = useData();
   const [showCourseUpload, setShowCourseUpload] = useState(false);
+  const [activeTab, setActiveTab] = useState<'learning' | 'discussions' | 'insights'>('learning');
+  const [isLlmOpen, setIsLlmOpen] = useState(false);
 
   return (
-    <div className="min-h-screen p-4 md:p-8 flex flex-col gap-4 max-w-[1600px] mx-auto">
-      {/* Top Bar with user info */}
-      <div className="fixed top-4 right-4 z-50 glass-panel p-2 flex items-center gap-3">
-        <div className="flex items-center gap-2 px-2">
-          <span className="text-xl">{user?.avatar}</span>
-          <div className="hidden sm:block">
-            <p className="text-sm font-medium text-gray-700">{user?.name}</p>
-            <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
-          </div>
-        </div>
-        {user?.role === 'admin' && onAdminClick && (
-          <button
-            onClick={onAdminClick}
-            className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors"
-            title="Admin Dashboard"
-          >
-            <Shield className="w-5 h-5" />
-          </button>
-        )}
-        <button
-          onClick={logout}
-          className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors"
-          title="Logout"
-        >
-          <LogOut className="w-5 h-5" />
-        </button>
-      </div>
-
-      <Header />
+    <div className="min-h-screen p-4 md:p-8 flex flex-col gap-4 max-w-[1600px] mx-auto relative">
+      <Header onAdminClick={onAdminClick} />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -57,43 +32,91 @@ const Dashboard: React.FC<DashboardProps> = ({ onAdminClick }) => {
         </div>
       )}
 
-      {/* Add Course Button (Teachers/Admins only) */}
-      {canManageCourses && (
-        <div className="flex justify-end -mt-2 mb-2">
-          <button
-            onClick={() => setShowCourseUpload(true)}
-            className="btn-primary flex items-center gap-2 text-sm"
+      {/* Action Bar & Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 mb-2">
+        <div className="flex items-center gap-6 overflow-x-auto">
+          <button 
+            onClick={() => setActiveTab('learning')}
+            className={`whitespace-nowrap pb-3 px-1 font-medium text-sm transition-colors border-b-2 ${activeTab === 'learning' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
           >
-            <Plus className="w-4 h-4" />
-            Add Course
+            Learning Material
+          </button>
+          <button 
+            onClick={() => setActiveTab('discussions')}
+            className={`whitespace-nowrap pb-3 px-1 font-medium text-sm transition-colors border-b-2 ${activeTab === 'discussions' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Discussions & Q&A
+          </button>
+          <button 
+            onClick={() => setActiveTab('insights')}
+            className={`whitespace-nowrap pb-3 px-1 font-medium text-sm transition-colors border-b-2 ${activeTab === 'insights' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            Insights
           </button>
         </div>
-      )}
 
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-180px)] min-h-[700px]">
-        {/* Left Panel: Course Content (8 cols) */}
-        <div className="lg:col-span-8 flex flex-col gap-4 h-full">
-          <CourseViewer />
-        </div>
+        {/* Add Course Button (Teachers/Admins only) */}
+        {canManageCourses && (
+          <div className="flex justify-end pb-2">
+            <button
+              onClick={() => setShowCourseUpload(true)}
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Course
+            </button>
+          </div>
+        )}
+      </div>
 
-        {/* Right Panel: Q&A + Sentiment (4 cols) */}
-        <div className="lg:col-span-4 flex flex-col gap-4 h-full">
-          {isLoading ? (
-            <div className="glass-panel p-6 text-gray-500">Loading backend data...</div>
-          ) : (
-            <>
-              <div className="flex-1 overflow-hidden">
+      <main className="flex-1 min-h-[700px]">
+        {activeTab === 'learning' && (
+          <div className="h-full animate-in fade-in duration-500">
+            <CourseViewer />
+          </div>
+        )}
+
+        {activeTab === 'discussions' && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-280px)] min-h-[600px] animate-in fade-in duration-500">
+            <div className="lg:col-span-8 h-full flex flex-col">
+              {isLoading ? (
+                <div className="glass-panel p-6 text-gray-500">Loading backend data...</div>
+              ) : (
                 <QuestionFeed />
-              </div>
-              <div className="shrink-0 space-y-4">
-                <LlmDialog />
-                <PeerThreads />
-                <SentimentWidget />
-              </div>
-            </>
-          )}
-        </div>
+              )}
+            </div>
+            <div className="lg:col-span-4 h-full flex flex-col gap-4 overflow-y-auto">
+              {!isLoading && <PeerThreads />}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'insights' && (
+          <div className="max-w-4xl mx-auto animate-in fade-in duration-500">
+            {isLoading ? (
+              <div className="glass-panel p-6 text-gray-500">Loading backend data...</div>
+            ) : (
+              <SentimentWidget />
+            )}
+          </div>
+        )}
       </main>
+
+      {/* Floating LLM Dialog */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+        {isLlmOpen && (
+          <div className="w-80 sm:w-96 shadow-2xl rounded-2xl overflow-hidden bg-white/50 backdrop-blur-xl border border-white/60 mb-4 animate-in slide-in-from-bottom-4 duration-300 relative">
+            <LlmDialog pageContext={activeTab} onClose={() => setIsLlmOpen(false)} />
+          </div>
+        )}
+        <button 
+          onClick={() => setIsLlmOpen(!isLlmOpen)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30 hover:scale-105 transition-all duration-300 ${isLlmOpen ? 'bg-gray-800 text-white shadow-gray-500/30 rotate-180' : 'btn-primary'}`}
+          title="AI Learning Assistant"
+        >
+          {isLlmOpen ? <X className="w-6 h-6" /> : <Bot className="w-6 h-6" />}
+        </button>
+      </div>
 
       {/* Course Upload Modal */}
       {showCourseUpload && (
