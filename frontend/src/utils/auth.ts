@@ -13,8 +13,8 @@ const simpleHash = (str: string): string => {
 };
 
 // Local user storage key
-const USERS_STORAGE_KEY = 'quickquery_users';
-const SESSION_STORAGE_KEY = 'quickquery_session';
+const USERS_STORAGE_KEY = 'symposium_users';
+const SESSION_STORAGE_KEY = 'symposium_session';
 
 export interface StoredUser extends User {
   email: string;
@@ -26,7 +26,7 @@ const DEFAULT_USERS: StoredUser[] = [
   {
     id: 'admin-1',
     name: 'Admin User',
-    email: 'admin@quickquery.com',
+    email: 'admin@symposium.edu',
     role: 'admin',
     avatar: '⚙️',
     passwordHash: simpleHash('admin123'),
@@ -34,7 +34,7 @@ const DEFAULT_USERS: StoredUser[] = [
   {
     id: 'teacher-1',
     name: 'Prof. Sarah Johnson',
-    email: 'sarah@quickquery.com',
+    email: 'sarah@symposium.edu',
     role: 'teacher',
     avatar: '👩‍🏫',
     passwordHash: simpleHash('teacher123'),
@@ -42,7 +42,7 @@ const DEFAULT_USERS: StoredUser[] = [
   {
     id: 'teacher-2',
     name: 'Dr. Michael Chen',
-    email: 'michael@quickquery.com',
+    email: 'michael@symposium.edu',
     role: 'teacher',
     avatar: '👨‍🏫',
     passwordHash: simpleHash('teacher123'),

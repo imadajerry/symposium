@@ -1,6 +1,6 @@
 # Backend
 
-Spring Boot backend for the Knowledge Sharing Portal.
+Spring Boot backend for the Symposium.
 
 ## Run
 
@@ -15,7 +15,7 @@ Default configuration is in `src/main/resources/application.yml`; override value
 ## Main Environment Variables
 
 ```text
-DB_URL=jdbc:postgresql://localhost:5432/knowledge_portal
+DB_URL=jdbc:postgresql://localhost:5432/symposium
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
 JWT_SECRET=change-this-development-secret-at-least-32-characters

@@ -1,4 +1,4 @@
-# Knowledge Sharing Portal
+# Symposium
 
 Full-stack learning portal with a React/Vite frontend and a Java Spring Boot backend. The app supports role-based access, subjects/classes, syllabus upload, Ollama-assisted content generation, subject Q&A, LLM dialogs, understanding analytics, and lightweight student peer threads.
 
@@ -24,7 +24,7 @@ Full-stack learning portal with a React/Vite frontend and a Java Spring Boot bac
 Create a PostgreSQL database:
 
 ```powershell
-createdb knowledge_portal
+createdb symposium_portal
 ```
 
 Run the backend:
@@ -43,7 +43,7 @@ http://localhost:8080/api
 Useful environment variables:
 
 ```text
-DB_URL=jdbc:postgresql://localhost:5432/knowledge_portal
+DB_URL=jdbc:postgresql://localhost:5432/symposium_portal
 DB_USERNAME=postgres
 DB_PASSWORD=postgres
 JWT_SECRET=change-this-development-secret-at-least-32-characters
@@ -57,8 +57,8 @@ Flyway creates the schema automatically on backend startup. Demo users are seede
 
 ```text
 Student: alex@student.com / student123
-Teacher: sarah@quickquery.com / teacher123
-Admin: admin@quickquery.com / admin123
+Teacher: sarah@symposium.edu / teacher123
+Admin: admin@symposium.edu / admin123
 ```
 
 ## Ollama Setup

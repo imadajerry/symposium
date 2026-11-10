@@ -12,10 +12,10 @@
   </parent>
 
   <groupId>com.quickquery</groupId>
-  <artifactId>knowledge-sharing-backend</artifactId>
+  <artifactId>symposium-backend</artifactId>
   <version>0.1.0</version>
-  <name>Knowledge Sharing Portal Backend</name>
-  <description>Java backend for QuickQuery knowledge sharing portal</description>
+  <name>Symposium Backend</name>
+  <description>Backend for Symposium</description>
 
   <properties>
     <java.version>21</java.version>

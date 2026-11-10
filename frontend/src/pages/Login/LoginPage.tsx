@@ -55,10 +55,10 @@ const LoginPage: React.FC = () => {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl text-white text-2xl font-bold shadow-lg shadow-blue-500/30 mb-4">
-            Q
+            S
           </div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-700 to-indigo-600 bg-clip-text text-transparent">
-            QuickQuery
+            Symposium
           </h1>
           <p className="text-gray-500 mt-2">Real-time learning doubts & feedback</p>
         </div>
@@ -193,8 +193,8 @@ const LoginPage: React.FC = () => {
             <p className="text-xs text-blue-700 font-medium mb-2">Demo Credentials:</p>
             <div className="text-xs text-blue-600 space-y-1">
               <p>👨‍🎓 Student: alex@student.com / student123</p>
-              <p>👩‍🏫 Teacher: sarah@quickquery.com / teacher123</p>
-              <p>⚙️ Admin: admin@quickquery.com / admin123</p>
+              <p>👩‍🏫 Teacher: sarah@symposium.edu / teacher123</p>
+              <p>⚙️ Admin: admin@symposium.edu / admin123</p>
             </div>
           </div>
         </div>

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: symposium-backend
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    plan: free
+    region: oregon
+    envVars:
+      - key: DB_URL
+        fromDatabase:
+          name: symposium-postgres
+          property: connectionString
+      - key: DB_USERNAME
+        fromDatabase:
+          name: symposium-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: symposium-postgres
+          property: password
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-1.5-flash
+      - key: CORS_ORIGINS
+        value: https://your-frontend.vercel.app,http://localhost:5173
+
+databases:
+  - name: symposium-postgres
+    plan: free
+    region: oregon
+    databaseName: symposium
+    user: postgres

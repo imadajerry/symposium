@@ -7,6 +7,8 @@ public record QuickQueryProperties(
     String jwtSecret,
     long tokenTtlSeconds,
     String uploadDir,
+    String geminiApiKey,
+    String geminiModel,
     String ollamaUrl,
     String ollamaModel,
     String corsOrigins

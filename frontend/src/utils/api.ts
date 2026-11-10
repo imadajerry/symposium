@@ -10,6 +10,7 @@ import type {
   Reply,
   Role,
   Syllabus,
+  SyllabusTopic,
   UnderstandingAnalytics,
   UnderstandingEntry,
   User,
@@ -18,7 +19,7 @@ import type {
 } from '../types';
 import { config } from './config';
 
-const TOKEN_KEY = 'quickquery_token';
+const TOKEN_KEY = 'symposium_token';
 
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
@@ -139,6 +140,21 @@ export const api = {
       body: JSON.stringify({ status, contentJson }),
     }),
 
+  /** Improvement 1 & 2: fetch canonical topics extracted from approved content. */
+  syllabusTopics: (subjectId: string) =>
+    request<SyllabusTopic[]>(`/subjects/${subjectId}/syllabus-topics`),
+
+  /** Improvement 2: teacher marks a topic covered. */
+  coverTopic: (subjectId: string, topicId: string, coveredOn?: string) =>
+    request<SyllabusTopic>(`/subjects/${subjectId}/syllabus-topics/${topicId}/cover`, {
+      method: 'PATCH',
+      body: JSON.stringify(coveredOn ? { coveredOn } : {}),
+    }),
+
+  /** Improvement 4: trigger LLM re-generation for a syllabus. */
+  regenerateSyllabus: (subjectId: string, syllabusId: string) =>
+    request<void>(`/subjects/${subjectId}/syllabi/${syllabusId}/regenerate`, { method: 'POST' }),
+
   async questions(subjectId: string): Promise<Question[]> {
     const questions = await request<Question[]>(`/subjects/${subjectId}/questions`);
     return questions.map(mapQuestion);
@@ -184,7 +200,7 @@ export const api = {
       body: JSON.stringify({ content }),
     }),
 
-  submitUnderstanding: (subjectId: string, payload: { topic: string; level: string; note?: string; tags: string[] }) =>
+  submitUnderstanding: (subjectId: string, payload: { topic: string; topicId?: string | null; level: string; note?: string; tags: string[] }) =>
     request<UnderstandingEntry>(`/subjects/${subjectId}/understanding`, {
       method: 'POST',
       body: JSON.stringify(payload),
